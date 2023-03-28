@@ -130,6 +130,8 @@ open class DMPlayerViewController: UIViewController {
 	private var currentQuartile: Quartile = .Init
 	private var adPosition: TimeInterval = 0.0
 	private var adDuration: TimeInterval = 0.0
+	private var videoPosition: TimeInterval = 0.0
+	private var videoDuration: TimeInterval = 0.0
 	private var omidSession: OMIDDailymotionAdSession?
 	private var isAdPaused = false
 	private var allowIDFA = true
@@ -563,6 +565,7 @@ extension DMPlayerViewController: WKScriptMessageHandler {
 		if message.name == DMPlayerViewController.consoleHandlerEvent {
 			print(message.body)
 		} else {
+			//			print("🙂" + "\(message.body)")
 			guard let playHandler = EventParser.parseEvent(from: message.body) else { return }
 
 			if playHandler.nameEvent?.name == "apiready" {
@@ -696,6 +699,8 @@ private extension DMPlayerViewController {
 
 	func handleOmsdkSignals(_ event: PlayerHandler) {
 
+		var tempPlayerStatus: PlayerStatus = self.playerStatus
+
 		if event.nameEvent?.name ==  WebPlayerEvent.adLoaded {
 			guard let verificationScripts = parseVerificationScriptsInfo(from: event.nameEvent?.data) else { return }
 			createOmidSession(with: verificationScripts)
@@ -759,25 +764,21 @@ private extension DMPlayerViewController {
 					break
 			}
 			endOmidSession()
-			self.playerStatus = .complete
 
 		} else if event.nameEvent?.name == WebPlayerEvent.adBufferStart {
 			omidMediaEvents?.bufferStart()
-			self.playerStatus = .buffering
 
 		} else if event.nameEvent?.name == WebPlayerEvent.adBufferEnd {
 			omidMediaEvents?.bufferFinish()
 		} else if event.nameEvent?.name == WebPlayerEvent.adPause {
 			omidMediaEvents?.pause()
 			isAdPaused = true
-			self.playerStatus = .paused
 
 		} else if event.nameEvent?.name == WebPlayerEvent.adPlay {
 			if isAdPaused {
 				omidMediaEvents?.resume()
 				isAdPaused = false
 			}
-			self.playerStatus = .playing
 		} else if event.nameEvent?.name == WebPlayerEvent.adClick {
 			omidMediaEvents?.adUserInteraction(withType: .click)
 		} else if event.nameEvent?.name == WebPlayerEvent.volumeChange {
@@ -786,27 +787,52 @@ private extension DMPlayerViewController {
 			} else {
 				omidMediaEvents?.volumeChange(to: 1)
 			}
-			self.playerStatus = .volumeChange
+			tempPlayerStatus = .volumeChange
 
 		} else if event.nameEvent?.name == WebPlayerEvent.fullscreenChange {
 
 			if playerState == nil {
 				guard let fullscreen = (event.nameEvent?.data?[WebPlayerParam.fullscreen])?.boolValue else { return }
 				omidMediaEvents?.playerStateChange(to: fullscreen ? .fullscreen : .normal)
-				self.playerStatus = fullscreen ? .fullScreenChange : .normalScreenChange
+				tempPlayerStatus = fullscreen ? .fullScreenChange : .normalScreenChange
 			}
-		} else if event.nameEvent?.name == WebPlayerEvent.adResume {
-			self.playerStatus = .resume
+		} else if event.nameEvent?.name == WebPlayerEvent.resume {
+			tempPlayerStatus = .resume
 		} else if event.nameEvent?.name == WebPlayerEvent.error {
-			self.playerStatus = .error
+			tempPlayerStatus = .error
 		} else if event.nameEvent?.name == WebPlayerEvent.seeking {
-			self.playerStatus = .seeking
+			tempPlayerStatus = .seeking
+		}  else if event.nameEvent?.name == WebPlayerEvent.buffering {
+			tempPlayerStatus = .buffering
 		} else if event.timeEvent?.name == WebPlayerEvent.adTimeUpdate {
 
 			adPosition = event.timeEvent?.time?.doubleValue ?? 0
 			recordQuartileChange()
+		} else if event.timeEvent?.name == WebPlayerEvent.durationChange {
+			videoPosition = 0;
+			videoDuration = event.timeEvent?.time?.doubleValue ?? 0
+			recordLoadingQuartileChange()
+		} else if event.timeEvent?.name == WebPlayerEvent.timeUpdate {
+			videoPosition = event.timeEvent?.time?.doubleValue ?? 0
+			recordLoadingQuartileChange()
+		} else if event.nameEvent?.name == WebPlayerEvent.playing {
+			tempPlayerStatus = .playing
+		} else if event.nameEvent?.name == WebPlayerEvent.pause {
+			tempPlayerStatus = .paused
+		} else if event.nameEvent?.name == WebPlayerEvent.adBufferStart {
+			tempPlayerStatus = .buffering
+		} else if event.nameEvent?.name == WebPlayerEvent.waiting {
+			tempPlayerStatus = .waiting
+		} else if event.nameEvent?.name == WebPlayerEvent.videoEnd {
+			tempPlayerStatus = .complete
+		} else if event.nameEvent?.name == WebPlayerEvent.end {
+			tempPlayerStatus = .idle
 		}
-		delegate?.playerStatus(self.playerStatus)
+		if tempPlayerStatus != self.playerStatus {
+			delegate?.playerStatus(tempPlayerStatus)
+			self.playerStatus = tempPlayerStatus
+		}
+
 	}
 
 	func parseVerificationScriptsInfo(from data: [String: String]?) -> [OMIDDailymotionVerificationScriptResource]? {
@@ -901,6 +927,21 @@ private extension DMPlayerViewController {
 		return try OMIDDailymotionAdSessionContext(partner: partner, script: omidScript, resources: resources, contentUrl: nil, customReferenceIdentifier: nil)
 	}
 
+	func recordLoadingQuartileChange () {
+		let progressPercent = videoPosition / videoDuration
+		var loading: LoadingProgress = .Init
+		if progressPercent >= 0 && progressPercent <= 0.01 {
+			loading = .start
+		} else if progressPercent >= 0.25 && progressPercent < 0.5 {
+			loading = .firstQuartile
+		} else if progressPercent >= 0.5 && progressPercent < 0.75 {
+			loading = .midpoint
+		} else if progressPercent >= 0.75 && progressPercent < 1 {
+			loading = .thirdQuartile
+		}
+		delegate?.playerProgress(loading)
+	}
+
 	func recordQuartileChange() {
 		let progressPercent = adPosition / adDuration
 
@@ -932,17 +973,6 @@ private extension DMPlayerViewController {
 				break
 		}
 
-		var loading: LoadingProgress = .Init
-		if progressPercent >= 0 && progressPercent <= 0.01 {
-			loading = .start
-		} else if progressPercent >= 0.25 && progressPercent < 0.5 {
-			loading = .firstQuartile
-		} else if progressPercent >= 0.5 && progressPercent < 0.75 {
-			loading = .midpoint
-		} else if progressPercent >= 0.75 && progressPercent < 1 {
-			loading = .thirdQuartile
-		}
-		delegate?.playerProgress(loading)
 	}
 }
 

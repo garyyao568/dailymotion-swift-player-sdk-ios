@@ -15,7 +15,8 @@ import Foundation
 	case normalScreenChange = 7
 	case resume = 8
 	case seeking = 9
-	case error = 10
+	case waiting = 10
+	case error = 11
 
 }
 
@@ -78,10 +79,16 @@ import Foundation
 
 struct WebPlayerEvent {
 	static let videoStart = "video_start"
+	static let videoEnd = "video_end"
+	static let buffering = "loadedmetadata"
+	static let videoDurationChange = "video_durationchange"
 	static let playing = "playing"
 	static let end = "end"
+	static let start = "start"
 	static let pause = "pause"
+	static let resume = "resume"
 	static let seeking = "seeking"
+	static let waiting = "waiting"
 	static let timeUpdate = "timeupdate"
 	static let durationChange = "durationchange"
 	static let volumeChange = "volumechange"
